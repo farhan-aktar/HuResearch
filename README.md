@@ -1,6 +1,7 @@
 HuResearch
  HuResearch is a lightweight, privacy-first academic research engine that brings together results from multiple open scholarly databases in a single interface.
 Built as a fully client-side web application, HuResearch is designed for students, researchers, and independent scholars who want fast access to academic research papers without logins, trackers, or paywalls.
+
 WHY HURESEARCH
 
 Academic research tools are often fragmented, slow, or locked behind institutional access. HuResearch aims to reduce that friction by acting as a meta-search layer over trusted public repositories, while keeping the experience simple and transparent.
