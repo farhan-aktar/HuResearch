@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>HuResearch</title>
+  <style>
+    /* --- CSS Reset & Variables --- */
+    *, *::before, *::after { box-sizing: border-box; }
+    :root { 
+      --bg: #ffffff;
+      --text: #111827;        
+      --muted: #6b7280;        
+
+      --card: #fafafa;          
+      --border: #e5e7eb;       
+
+      --accent: #02050a;       
+      --accent-fg: #ffffff;
+
+      --badge: #f3f4f6;        
+      --highlight: #eab308;    
+
+      --cite-bg: #eef2f7;      
+      --cite-text: #1f2937; 
+    }
+
+    body { 
+      margin: 0; 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+      background: var(--bg); 
+      color: var(--text); 
+      padding: 0; 
+      line-height: 1.5; 
+    }
+
+    /* --- LAYOUT UTILITIES --- */
+    .wrap { 
+        width: 100%;
+        max-width: 1200px; 
+        margin: 0 auto;
+        padding: 0 16px; /* Gutter */
+        position: relative;
+    }
+
+    /* --- HERO SECTION (Layered Inset) --- */
+    .huresearch-hero {
+      position: relative;
+      padding: 80px 0 40px; /* Top spacing + Bottom spacing */
+    }
+
+    /* 1. The Artwork (Background Layer) */
+    .huresearch-artwork {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 160px;              /* Partial visibility height */
+      background-image: url("https://res.cloudinary.com/dpnpu5vn5/image/upload/v1767111163/a2dc70d5-1d8c-4803-a5fd-7219f08ddabd_3000_kfslb3.jpg");
+      background-size: cover;
+      background-repeat: no-repeat;
+      background-position: center 60%;
+      z-index: 1; /* Sits behind */
+    }
+
+    /* 2. The Search Container (Foreground Layer) */
+    .huresearch-search {
+      position: relative;
+      z-index: 2;                /* Floats ABOVE artwork */
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+
+    .search-panel { 
+      background: #fff; 
+      padding: 16px; 
+      border-radius: 16px; 
+      border: 1px solid var(--border); 
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); 
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* --- RESULTS SECTION --- */
+    .huresearch-results {
+      padding-top: 20px;
+      padding-bottom: 80px;
+    }
+
+    /* --- MOBILE TUNING --- */
+    @media (max-width: 600px) {
+      .huresearch-hero {
+        padding-top: 60px;
+      }
+      
+      .huresearch-artwork {
+        height: 120px;
+        background-position: center 70%;
+      }
+    }
+
+    /* Help Button Styling */
+    .help-toggle {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+    .help-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Help Content Box */
+    .help-content {
+      display: none;
+      background: #fff;
+      border: 1px solid var(--border);
+      padding: 14px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .help-content.show { display: block; animation: fadeIn 0.2s ease; }
+    .help-content ul { margin: 0; padding-left: 20px; }
+    .help-content li { margin-bottom: 4px; color: var(--muted); }
+    .help-content strong { color: var(--text); }
+    
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+    
+    .input-group { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; margin-top: 10px; }
+    
+    input[type="text"] { 
+      flex: 1; 
+      min-width: 200px;
+      padding: 14px 16px; 
+      border-radius: 12px; 
+      border: 1px solid var(--border); 
+      background: #fff; 
+      color: var(--text); 
+      font-size: 16px; 
+      outline: none; 
+      appearance: none;
+    }
+    input[type="text"]:focus { border-color: var(--accent); }
+    
+    button.search-btn { 
+      background: var(--accent); 
+      color: var(--accent-fg); 
+      border: none; 
+      padding: 14px 24px; 
+      border-radius: 12px; 
+      font-weight: 600; 
+      font-size: 16px;
+      cursor: pointer; 
+      white-space: nowrap;
+      touch-action: manipulation;
+    }
+    button.search-btn:active { opacity: 0.8; transform: translateY(1px); }
+
+    /* Filters */
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+    .filter-label { cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+    .filter-label input { display: none; }
+    .filter-label span { 
+      display: block; 
+      padding: 6px 14px; 
+      border-radius: 99px; 
+      font-size: 13px; 
+      border: 1px solid var(--border); 
+      background: #fff; 
+      color: var(--muted); 
+      transition: all 0.1s; 
+    }
+    
+    .filter-label input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+    .filter-label.pdf-toggle span { font-weight: 600; border-color: #b91c1c; color: #b91c1c; }
+    .filter-label.pdf-toggle input:checked + span { background: #b91c1c; color: #fff; border-color: #b91c1c; }
+
+    .separator { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
+
+    .credit {
+      margin-top: auto;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+      font-size: 11px;
+      color: var(--muted);
+      text-align: right;
+      font-weight: 400;
+      opacity: 0.6;
+      letter-spacing: 0.02em;
+    }
+
+    /* --- Results --- */
+    .status-bar { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 16px; min-height: 20px; }
+    .error-box { background: var(--error-bg); color: #991b1b; padding: 12px; border-radius: 10px; border: 1px solid #fecaca; margin-bottom: 16px; font-size: 14px; }
+
+    .result-card { 
+      background: #fff; 
+      border: 1px solid var(--border); 
+      padding: 16px; 
+      border-radius: 12px; 
+      margin-bottom: 12px; 
+      position: relative; 
+      display: flex;
+      flex-direction: column;
+    }
+    .result-card.handoff { border-style: dashed; background: var(--card); }
+    
+   .res-title { 
+      display: block;
+      font-family: Georgia, "Times New Roman", Times, serif;
+      font-size: 19px;
+      font-weight: 600;
+      color: var(--text);
+      text-decoration: none;
+      margin-bottom: 10px;
+      line-height: 1.35;
+    }
+    .res-title:hover { text-decoration: underline; }
+    
+   .res-meta { 
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .res-snippet { 
+      font-family: Georgia, "Times New Roman", Times, serif;
+      font-size: 15px;
+      color: #1f2937;
+      line-height: 1.7;
+      margin-bottom: 18px;
+      word-wrap: break-word; 
+    }
+    .res-snippet mark {
+      background-color: rgba(234, 179, 8, 0.42); /* dark ochre, logo-aligned */
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+
+    .res-footer { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: auto; }
+    .badge { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--badge); color: var(--muted); text-decoration: none; font-weight: 500; }
+    .badge.pdf { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+    
+    .copy-btn { 
+      margin-left: auto; 
+      background: var(--cite-bg); 
+      color: var(--cite-text); 
+      border: 1px solid transparent; 
+      font-size: 13px; 
+      font-weight: 600;
+      cursor: pointer; 
+      padding: 8px 16px; 
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { filter: brightness(0.95); transform: translateY(-1px); }
+    .copy-btn:active { transform: translateY(0); }
+
+    .skeleton { height: 80px; background: linear-gradient(90deg, var(--card) 25%, var(--border) 50%, var(--card) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 12px; margin-bottom: 12px; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* --- EASTER EGG STYLES --- */
+    .easter-egg-card {
+        display: none; /* Hidden by default */
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 40px 24px;
+        margin: 0 auto 30px auto;
+        max-width: 400px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        position: relative;
+        z-index: 15;
+    }
+    .easter-egg-card.active { display: flex; animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    
+    .ee-img { 
+        width: 140px; 
+        height: 140px; 
+        border-radius: 50%; 
+        object-fit: cover; 
+        border: none;
+        box-shadow: none;
+        margin-bottom: 20px; 
+        background: var(--badge); /* fallback bg */
+    }
+    .ee-name { 
+        font-size: 22px; 
+        font-weight: 700; 
+        color: var(--text); 
+        margin-bottom: 8px; 
+        font-family: Georgia, serif; 
+        white-space: nowrap; 
+    }
+    .ee-bio { 
+        font-size: 15px;
+        color: var(--muted); 
+        font-weight: 400; 
+    }
+
+    @keyframes popIn { from { opacity: 0; transform: scale(0.9) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+    /* Floating Emoji Animation */
+    .emoji-container {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 999;
+        display: none;
+    }
+    .emoji-container.active { display: block; }
+
+    .float-emoji {
+        position: absolute;
+        bottom: -50px;
+        font-size: 40px;
+        opacity: 0;
+        animation: floatUp 4s ease-out forwards;
+    }
+
+    @keyframes floatUp {
+        0% { transform: translateY(0) scale(0.5) rotate(0deg); opacity: 0; }
+        10% { opacity: 1; }
+        80% { opacity: 0.8; }
+        100% { transform: translateY(-110vh) scale(1.2) rotate(20deg); opacity: 0; }
+    }
+
+    /* --- RESPONSIVE LOGIC --- */
+
+    /* Desktop Grid Layout */
+    @media (min-width: 900px) {
+      /* Search panel expands to fill container, max-width handled by container */
+      .search-panel {
+        width: 100%;
+      }
+      
+      #list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .result-card {
+        margin-bottom: 0;
+        height: 100%;
+      }
+    }
+
+    /* Mobile */
+    @media (max-width: 600px) {
+      .search-panel { 
+        padding: 12px; 
+      }
+      .input-group { flex-direction: column; gap: 8px; }
+      input[type="text"], button.search-btn { width: 100%; }
+      .filters { justify-content: flex-start; }
+      .separator { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="huresearch-app">
+    
+    <section class="huresearch-hero">
+      
+      <div class="huresearch-artwork"></div>
+
+      <div class="huresearch-search">
+        <div class="search-panel">
+          <button class="help-toggle" id="helpBtn" aria-label="How to use">?</button>
+          
+          <div class="help-content" id="helpContent">
+            <div style="font-weight:600; margin-bottom:8px">How to use HuResearch:</div>
+            <ul>
+              <li><strong>Customize Sources:</strong> Toggle repositories below to refine your search results.</li>
+              <li><strong>Download PDFs:</strong> Tap the <span style="color:#b91c1c; font-weight:600">PDF badge</span> to access direct full-text downloads.</li>
+              <li><strong>Easy Citations:</strong> Click the <span style="color:var(--accent); font-weight:600">Cite</span> button to instantly copy formatted references to your clipboard.</li>
+            </ul>
+          </div>
+
+          <div class="input-group">
+            <input id="q" type="text" enterkeyhint="search" placeholder="Keywords, Titles, or Authors..." autocomplete="off" />
+            <button class="search-btn" id="searchBtn">Search</button>
+          </div>
+
+          <div class="filters">
+            <label class="filter-label pdf-toggle"><input type="checkbox" id="pdfOnly" /><span>PDFs Only</span></label>
+            
+            <div class="separator"></div>
+
+            <label class="filter-label"><input type="checkbox" data-src="openalex" checked /><span>OpenAlex</span></label>
+            <label class="filter-label"><input type="checkbox" data-src="crossref" checked /><span>Crossref</span></label>
+            <label class="filter-label"><input type="checkbox" data-src="internetarchive" /><span>Archive</span></label>
+            
+            <div class="separator"></div>
+            
+            <label class="filter-label"><input type="checkbox" data-src="jstor" /><span>JSTOR</span></label>
+            <label class="filter-label"><input type="checkbox" data-src="muse" checked /><span>MUSE</span></label>
+          </div>
+
+          <div class="credit">Developed by Farhan Aktar</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="huresearch-results">
+      <div class="wrap">
+        <div id="easterEgg" class="easter-egg-card">
+            <img id="eeImg" src="" alt="" class="ee-img">
+            <div id="eeName" class="ee-name"></div>
+            <div id="eeBio" class="ee-bio"></div>
+        </div>
+        <div id="emojiContainer" class="emoji-container"></div>
+
+        <div id="errors"></div>
+        <div id="status" class="status-bar"></div>
+        <div id="list"></div>
+      </div>
+    </section>
+
+  </div>
+
+<script>
+// --- 1. Utilities ---
+const encode = encodeURIComponent;
+function mkEl(tag, cls, txt) { const el = document.createElement(tag); if(cls) el.className=cls; if(txt) el.textContent=txt; return el; }
+function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// MLA Citation Formatter
+function citeMLA(item) {
+  const authors = item.authors?.length
+    ? item.authors.map(a => `${a.last || a.display_name}`).join(', ')
+    : '';
+
+  const title = item.title ? `"${item.title}."` : '';
+  const journal = item.journal ? `${item.journal},` : '';
+  const year = item.date ? `${item.date},` : '';
+  const url = item.url || '';
+  
+  const accessDate = new Date().toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+
+  return [
+    authors,
+    title,
+    journal,
+    year,
+    url,
+    `Accessed ${accessDate}.`
+  ].filter(Boolean).join(' ');
+}
+
+// Help Toggle Logic
+document.getElementById('helpBtn').addEventListener('click', () => {
+  document.getElementById('helpContent').classList.toggle('show');
+});
+
+function highlightText(element, query) {
+  if (!query || !element.textContent) return;
+  const terms = query.split(/\s+/).filter(t => t.length > 2);
+  if (terms.length === 0) return;
+  try {
+    const pattern = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi');
+    const walk = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
+    const nodes = []; while(walk.nextNode()) nodes.push(walk.currentNode);
+    nodes.forEach(node => {
+      if (node.parentNode.nodeName === 'MARK') return;
+      if (pattern.test(node.nodeValue)) {
+        const span = document.createElement('span');
+        span.innerHTML = node.nodeValue.replace(pattern, '<mark>$1</mark>');
+        node.parentNode.replaceChild(span, node);
+      }
+    });
+  } catch (e) {}
+}
+
+// --- 2. Fetchers ---
+async function safeFetch(promise) { try { return await promise; } catch (err) { return []; } }
+
+async function fetchOpenAlex(q) {
+  const url = `https://api.openalex.org/works?search=${encode(q)}&per_page=20&filter=type:journal-article,is_paratext:false`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(res.status);
+  const data = await res.json();
+  return data.results.map(w => ({
+    title: w.title,
+    url: w.doi ? `https://doi.org/${w.doi}` : w.id,
+    source: 'OpenAlex',
+    date: w.publication_year ? String(w.publication_year) : '',
+    journal: w.primary_location?.source?.display_name || '',
+    doi: w.doi ? w.doi.replace('https://doi.org/', '') : null,
+    pdf: w.open_access?.oa_url || null,
+    snippet: ''
+  }));
+}
+
+async function fetchCrossref(q) {
+  const url = `https://api.crossref.org/works?query=${encode(q)}&filter=type:journal-article&rows=20&mailto=search@daag.app`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(res.status);
+  const data = await res.json();
+  return (data.message.items || []).map(i => {
+    let pdfUrl = null;
+    if (i.link && Array.isArray(i.link)) {
+      const found = i.link.find(l => l['content-type'] === 'application/pdf');
+      if (found) pdfUrl = found.URL;
+    }
+    return {
+      title: i.title?.[0] || 'Untitled',
+      url: i.URL,
+      source: 'Crossref',
+      date: i.created?.['date-parts']?.[0]?.[0] ? String(i.created['date-parts'][0][0]) : '',
+      journal: i['container-title']?.[0] || '',
+      doi: i.DOI,
+      pdf: pdfUrl,
+      snippet: ''
+    };
+  });
+}
+
+async function fetchInternetArchive(q) {
+  const qStr = `(${encode(q)}) AND mediatype:(texts)`;
+  const url = `https://archive.org/advancedsearch.php?q=${qStr}&fl[]=identifier,title,description,year&rows=15&output=json`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(res.status);
+  const data = await res.json();
+  return (data.response?.docs || []).map(d => ({
+    title: d.title,
+    url: `https://archive.org/details/${d.identifier}`,
+    source: 'Internet Archive',
+    date: d.year ? String(d.year) : '',
+    snippet: Array.isArray(d.description) ? d.description[0] : (d.description || ''),
+    pdf: `https://archive.org/download/${d.identifier}/${d.identifier}.pdf`,
+    journal: 'Archive.org'
+  }));
+}
+
+// --- 3. App Logic ---
+const DOM = {
+  q: document.getElementById('q'),
+  btn: document.getElementById('searchBtn'),
+  list: document.getElementById('list'),
+  err: document.getElementById('errors'),
+  stat: document.getElementById('status'),
+  pdfToggle: document.getElementById('pdfOnly'),
+  ee: document.getElementById('easterEgg'),
+  eeImg: document.getElementById('eeImg'),
+  eeName: document.getElementById('eeName'),
+  eeBio: document.getElementById('eeBio'),
+  emojis: document.getElementById('emojiContainer')
+};
+
+let globalItems = [];
+let lastQuery = '';
+
+DOM.btn.addEventListener('click', runSearch);
+DOM.q.addEventListener('keydown', e => { if(e.key === 'Enter') runSearch(); });
+DOM.pdfToggle.addEventListener('change', () => renderList(globalItems, lastQuery));
+
+// Easter Egg Data
+const easterEggs = {
+    "sthitirupa mukherjee": {
+        name: "Sthitirupa Mukherjee",
+        bio: "Editor of Daag Magazine",
+        img: "https://res.cloudinary.com/dpnpu5vn5/image/upload/v1766758483/Stritirupa_bzf7p7.png",
+        emojis: ['✍️', '📄']
+    },
+    "farhan aktar": {
+        name: "Farhan Aktar",
+        bio: "Founder of Daag",
+        img: "https://res.cloudinary.com/dpnpu5vn5/image/upload/v1766761391/farhan_daag_yvu8xn.png",
+        emojis: ['💻', '📽️']
+    },
+    "shamekha wazed": {
+        name: "Shamekha Wazed",
+        bio: "Graphic Designer, Illustrator",
+        img: "https://res.cloudinary.com/dpnpu5vn5/image/upload/v1766761390/Shamekha_daag_fhrlvs.png",
+        emojis: ['🎨', '👩🏻‍🎨']
+    },
+    "bidisha ghosh": {
+        name: "Bidisha Ghosh",
+        bio: "Event Management",
+        img: "https://res.cloudinary.com/dpnpu5vn5/image/upload/v1766761389/Bidisha_daag_j2g7xm.png",
+        emojis: ['🎤', '📅']
+    },
+    "saina azmi": {
+        name: "Saina Azmi",
+        bio: "Classical dancer",
+        img: "https://res.cloudinary.com/dpnpu5vn5/image/upload/v1766761391/Saina_daag_qvfkvp.png",
+        emojis: ['💃🏻', '✈️']
+    }
+};
+
+function triggerEmojiShower(emojiList) {
+    const container = DOM.emojis;
+    for(let i=0; i<25; i++) {
+        setTimeout(() => {
+            const el = document.createElement('div');
+            el.className = 'float-emoji';
+            el.textContent = emojiList[Math.floor(Math.random() * emojiList.length)];
+            el.style.left = Math.floor(Math.random() * 95) + 'vw'; 
+            const duration = 3 + Math.random() * 2;
+            el.style.animationDuration = `${duration}s`;
+            container.appendChild(el);
+            setTimeout(() => { if(el.parentNode) el.remove(); }, duration * 1000);
+        }, i * 120); 
+    }
+}
+
+async function runSearch() {
+  const query = DOM.q.value.trim();
+  if (!query) { DOM.q.focus(); return; }
+  lastQuery = query;
+
+  const lowerQuery = query.toLowerCase();
+  
+  if (easterEggs[lowerQuery]) {
+      DOM.list.innerHTML = '';
+      DOM.err.innerHTML = '';
+      DOM.stat.textContent = '';
+      const data = easterEggs[lowerQuery];
+      DOM.eeImg.src = data.img;
+      DOM.eeName.textContent = data.name;
+      DOM.eeBio.textContent = data.bio;
+      DOM.ee.classList.add('active');
+      DOM.emojis.classList.add('active');
+      triggerEmojiShower(data.emojis);
+      return; 
+  } else {
+      DOM.ee.classList.remove('active');
+      DOM.emojis.classList.remove('active');
+      DOM.emojis.innerHTML = ''; 
+  }
+
+  DOM.list.innerHTML = '';
+  DOM.err.innerHTML = '';
+  DOM.stat.textContent = 'Fetching original papers...';
+  
+  for(let i=0; i<4; i++) DOM.list.appendChild(mkEl('div', 'skeleton'));
+
+  const checks = Array.from(document.querySelectorAll('.filters input[data-src]:checked'));
+  const sources = checks.map(c => c.dataset.src);
+  
+  if(sources.length === 0) {
+    DOM.list.innerHTML = '';
+    DOM.err.innerHTML = '<div class="error-box">Select at least one source.</div>';
+    DOM.stat.textContent = '';
+    return;
+  }
+
+  const promises = [];
+  if(sources.includes('openalex')) promises.push(safeFetch(fetchOpenAlex(query)));
+  if(sources.includes('crossref')) promises.push(safeFetch(fetchCrossref(query)));
+  if(sources.includes('internetarchive')) promises.push(safeFetch(fetchInternetArchive(query)));
+
+  const handoffs = [
+    {id: 'jstor', name: 'JSTOR', url: `https://www.jstor.org/action/doBasicSearch?Query=${encode(query)}&acc=off&wc=on`},
+    {id: 'muse', name: 'Project MUSE', url: `https://muse.jhu.edu/search?action=search&query=${encode(query)}`}
+  ];
+
+  try {
+    const resultsArrays = await Promise.all(promises);
+    let allItems = resultsArrays.flat();
+
+    handoffs.forEach(h => {
+      if(sources.includes(h.id)) {
+        allItems.push({
+          title: `Search ${h.name} for "${query}"`,
+          url: h.url,
+          source: h.name,
+          date: '',
+          snippet: 'External database search (Handoff)',
+          isHandoff: true
+        });
+      }
+    });
+
+    const seen = new Set();
+    allItems = allItems.filter(item => {
+      const key = item.url;
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    allItems.sort((a, b) => {
+      if(a.isHandoff !== b.isHandoff) return a.isHandoff ? 1 : -1;
+      const dateA = parseInt(a.date) || 0;
+      const dateB = parseInt(b.date) || 0;
+      return dateB - dateA;
+    });
+
+    globalItems = allItems;
+    renderList(globalItems, query);
+
+  } catch (globalError) {
+    DOM.list.innerHTML = '';
+    DOM.err.innerHTML = `<div class="error-box">Error: ${globalError.message}</div>`;
+  }
+}
+
+function renderList(items, query) {
+  DOM.list.innerHTML = '';
+  
+  const pdfOnly = DOM.pdfToggle.checked;
+  const visibleItems = pdfOnly ? items.filter(i => !!i.pdf) : items;
+
+  if (visibleItems.length === 0) {
+    DOM.stat.textContent = pdfOnly ? 'No results with direct PDFs found.' : 'No results found.';
+    return;
+  }
+
+  DOM.stat.textContent = `Found ${visibleItems.length} results${pdfOnly ? ' (PDFs Only)' : ''}.`;
+  
+  visibleItems.forEach(item => {
+    const card = mkEl('div', `result-card ${item.isHandoff ? 'handoff' : ''}`);
+
+    const title = mkEl('a', 'res-title', item.title);
+    title.href = item.url; title.target = '_blank'; title.rel = 'noopener';
+    highlightText(title, query);
+    card.appendChild(title);
+
+    const metaLine = [item.source, item.date, item.journal].filter(Boolean).join(' · ');
+    card.appendChild(mkEl('div', 'res-meta', metaLine));
+
+    if (item.snippet) {
+      const snippetDiv = mkEl('div', 'res-snippet', item.snippet);
+      highlightText(snippetDiv, query);
+      card.appendChild(snippetDiv);
+    }
+
+    const footer = mkEl('div', 'res-footer');
+    
+    if (item.pdf) {
+      const pdfBtn = mkEl('a', 'badge pdf', 'PDF');
+      pdfBtn.href = item.pdf; pdfBtn.target = '_blank';
+      footer.appendChild(pdfBtn);
+    }
+
+    if (item.doi) {
+      const doiBtn = mkEl('a', 'badge', 'DOI');
+      doiBtn.href = `https://doi.org/${item.doi}`; doiBtn.target = '_blank';
+      footer.appendChild(doiBtn);
+    }
+
+    if (!item.isHandoff) {
+      const citeBtn = mkEl('button', 'copy-btn', 'Cite (MLA)');
+      citeBtn.onclick = () => {
+        const citation = citeMLA(item);
+        navigator.clipboard.writeText(citation);
+        citeBtn.textContent = 'Copied!';
+        citeBtn.style.background = '#22c55e';
+        citeBtn.style.color = '#fff';
+        setTimeout(() => {
+          citeBtn.textContent = 'Cite (MLA)';
+          citeBtn.style.background = '';
+          citeBtn.style.color = '';
+        }, 2000);
+      };
+      footer.appendChild(citeBtn);
+    } else {
+      footer.appendChild(mkEl('span', 'badge', 'External'));
+    }
+
+    card.appendChild(footer);
+    DOM.list.appendChild(card);
+  });
+}
+</script>
+</body>
+</html>
