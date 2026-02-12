@@ -34,27 +34,63 @@
         .animate-fade-in-up { animation: fadeInUp 0.3s ease-out forwards; }
         .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
         
-        /* PDF Container Styles */
+        /* PDF Container Styles (Fixed for Desktop Zooming) */
         #pdf-render-container {
             overflow: auto;
-            display: flex;
-            justify-content: center;
             background-color: #e5e5e5;
             height: 100%;
             position: relative;
-            touch-action: pan-y; /* Allow vertical scroll, handle horizontal in JS */
+            text-align: center; /* Center the inline-block wrapper */
+            padding: 20px;
+            touch-action: pan-x pan-y; 
         }
         
         /* Wrapper for Canvas + Text Layer */
         .pdf-page-wrapper {
             position: relative;
-            margin: 20px 0;
+            display: inline-block; /* Prevents flexbox overflow distortion */
+            margin: 0 auto;
             box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
             user-select: none;
+            transition: transform 0.1s ease-out; 
+            text-align: left; /* Reset text align for inner absolute layers */
         }
 
         canvas {
             display: block;
+        }
+
+        /* Floating Pagination Capsule (Fixed Visibility) */
+        .floating-pagination {
+            position: fixed; /* Fixed relative to viewport */
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(8px);
+            border-radius: 9999px;
+            padding: 8px 24px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            color: white;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            z-index: 9999; /* Extremely high z-index to guarantee visibility */
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            pointer-events: auto;
+        }
+
+        @media (max-width: 768px) {
+            .floating-pagination {
+                bottom: 90px; /* Sits perfectly above the bottom mobile nav */
+                padding: 8px 20px;
+                gap: 16px;
+            }
+            .floating-pagination.hide-on-mobile {
+                display: none !important;
+            }
         }
 
         /* PDF.js Text Layer */
@@ -76,11 +112,11 @@
             transform-origin: 0% 0%;
         }
 
-        /* Highlight Layer (Drawing) */
+        /* Highlight Layer (Drawing & Comments) */
         .highlight-layer {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; /* Let clicks pass through unless in drawing mode */
+            pointer-events: none; 
             z-index: 10;
         }
 
@@ -88,12 +124,35 @@
             pointer-events: auto;
             cursor: crosshair;
         }
+        
+        .highlight-layer.comment-mode {
+            pointer-events: auto;
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%23f59e0b" stroke="%23ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>') 0 24, pointer; 
+        }
 
         .drawn-highlight {
             position: absolute;
-            background-color: rgba(253, 224, 71, 0.4); /* Yellow-300 with opacity */
+            background-color: rgba(253, 224, 71, 0.4); 
             border: 1px solid rgba(234, 179, 8, 0.6);
             pointer-events: none;
+        }
+
+        /* Comment Marker */
+        .comment-marker {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            margin-top: -24px; 
+            cursor: pointer;
+            z-index: 20;
+            color: #f59e0b; 
+            filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));
+            transition: transform 0.1s;
+            pointer-events: auto;
+        }
+        .comment-marker:hover {
+            transform: scale(1.2);
+            color: #d97706;
         }
 
         ::selection {
@@ -206,9 +265,11 @@
 
         /* Highlight Note Style */
         .highlight-note { border-left: 3px solid #fbbf24; background: #fffbeb; }
+        .comment-note { border-left: 3px solid #f59e0b; background: #fff7ed; }
 
-        /* Highlight Mode Active State */
-        .highlight-btn-active { background-color: #fef08a !important; color: #854d0e !important; border-color: #fde047; }
+        /* Mode Active States */
+        .tool-btn-active { background-color: #fef08a !important; color: #854d0e !important; border-color: #fde047; }
+        .comment-btn-active { background-color: #fef3c7 !important; color: #b45309 !important; border-color: #fcd34d; }
     </style>
 </head>
 <body class="text-stone-900 h-screen w-full flex overflow-hidden selection:bg-stone-200">
@@ -231,11 +292,26 @@
         <!-- Dynamic View Injected Here -->
     </main>
 
+    <!-- Comment Modal -->
+    <div id="comment-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm">
+        <div class="bg-stone-900 rounded-xl shadow-2xl border border-stone-700 w-80 p-4 transform scale-100 transition-all animate-fade-in-up">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="font-bold text-white text-sm" id="comment-modal-title">Add a comment</h3>
+                <button onclick="closeCommentModal()" class="text-stone-400 hover:text-white"><i data-lucide="x" width="16"></i></button>
+            </div>
+            <textarea id="comment-text" class="w-full h-24 bg-stone-800 border border-stone-700 rounded-lg p-3 text-sm text-stone-200 focus:ring-1 focus:ring-stone-500 outline-none resize-none mb-3 placeholder-stone-500" placeholder="Type your comment..."></textarea>
+            <div class="flex justify-end gap-2">
+                <button onclick="closeCommentModal()" class="px-3 py-1.5 text-xs font-medium text-stone-400 hover:text-stone-200">Cancel</button>
+                <button onclick="saveComment()" class="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-500">Post</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Emoji Container for Easter Eggs -->
     <div id="emojiContainer" class="emoji-container"></div>
 
-    <!-- Notification Toast -->
-    <div id="toast-container" class="absolute bottom-20 md:bottom-6 right-6 z-50 pointer-events-none"></div>
+    <!-- Notification Toast (Moved to top center for mobile to prevent overlap) -->
+    <div id="toast-container" class="fixed top-24 md:top-auto md:bottom-6 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:right-6 z-[9999] pointer-events-none flex flex-col items-center md:items-end w-max max-w-[90vw]"></div>
 
     <!-- Mobile Nav (Bottom) -->
     <div class="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 z-50 flex justify-around p-3 pb-safe" id="mobile-nav">
@@ -344,14 +420,21 @@
                 easterEgg: null
             },
             citations: { style: 'APA', copiedId: null },
-            pdfViewer: { activePdf: null, pageNum: 1, numPages: 0, scale: 1.0, pdfDoc: null, highlightMode: false }
+            pdfViewer: { 
+                activePdf: null, 
+                pageNum: 1, 
+                numPages: 0, 
+                scale: 1.0, 
+                pdfDoc: null, 
+                highlightMode: false,
+                commentMode: false,
+                editingCommentId: null
+            }
         };
 
-        // Load Metadata from LocalStorage
         let savedData = localStorage.getItem('fraued_data');
         let state = savedData ? { ...defaultState, ...JSON.parse(savedData), pdfViewer: defaultState.pdfViewer, search: defaultState.search } : defaultState;
         
-        // Reset PDFs array in state initially, we will re-populate from IndexedDB
         state.pdfs = []; 
 
         /**
@@ -361,7 +444,6 @@
         async function init() {
             await initDB();
             
-            // Rehydrate PDFs from IndexedDB
             const storedPDFs = await loadPDFsFromDB();
             if (storedPDFs && storedPDFs.length > 0) {
                 state.pdfs = storedPDFs.map(pdf => ({
@@ -552,11 +634,20 @@
             state.pdfViewer.pageNum = 1;
             state.pdfViewer.scale = 1.0;
             state.pdfViewer.highlightMode = false;
-            renderView();
+            state.pdfViewer.commentMode = false;
+            
+            // Render the shell immediately to show the loading state
+            renderView(); 
+            
             try {
                 const loadingTask = pdfjsLib.getDocument(pdf.url);
                 state.pdfViewer.pdfDoc = await loadingTask.promise;
                 state.pdfViewer.numPages = state.pdfViewer.pdfDoc.numPages;
+                
+                // Immediately update DOM to show correct page count for the floating capsule
+                const countEl = document.getElementById('page-count');
+                if(countEl) countEl.textContent = state.pdfViewer.numPages;
+                
                 renderPDFPage(1);
             } catch (error) { 
                 console.error(error);
@@ -566,14 +657,39 @@
 
         function closePdf() { state.pdfViewer.activePdf = null; state.pdfViewer.pdfDoc = null; renderView(); }
 
-        // --- DRAWING LOGIC VARS ---
+        // --- DRAWING & COMMENTING LOGIC ---
         let isDrawing = false;
         let startX = 0, startY = 0;
         let currentRect = null;
 
+        // Zoom Functions
+        function zoomIn() {
+            state.pdfViewer.scale += 0.2;
+            renderPDFPage(state.pdfViewer.pageNum);
+        }
+
+        function zoomOut() {
+            if(state.pdfViewer.scale > 0.4) {
+                state.pdfViewer.scale -= 0.2;
+                renderPDFPage(state.pdfViewer.pageNum);
+            }
+        }
+
+        // Jump to Page function for annotation cards
+        function jumpToPage(num) {
+            if (state.pdfViewer.pageNum !== num) {
+                renderPDFPage(num);
+            }
+            if (window.innerWidth < 768 && state.pdfViewer.mobileNotesOpen) {
+                toggleMobileNotes();
+            }
+        }
+
         async function renderPDFPage(num) {
             if (!state.pdfViewer.pdfDoc) return;
             state.pdfViewer.pageNum = num;
+            
+            // Update page number display
             const pageNumDisplay = document.getElementById('page-num');
             if(pageNumDisplay) pageNumDisplay.textContent = num;
 
@@ -581,28 +697,53 @@
             const container = document.getElementById('pdf-render-container');
             const wrapper = document.getElementById('pdf-wrapper');
             
-            const desiredWidth = container.clientWidth - 40;
-            const viewport = page.getViewport({ scale: 1.0 });
-            const scale = desiredWidth / viewport.width;
-            state.pdfViewer.scale = scale < 1 ? 1 : scale;
+            // Reset wrapper transform for clean visual scale
+            if(wrapper) {
+                wrapper.style.transition = 'none';
+                wrapper.style.transform = 'translateX(0px) scale(1)';
+            }
             
-            const scaledViewport = page.getViewport({ scale: state.pdfViewer.scale });
+            // Responsive base scale calculation
+            const containerWidth = container.clientWidth - 40;
+            const unscaledViewport = page.getViewport({ scale: 1.0 });
+            const baseScale = containerWidth / unscaledViewport.width;
+            const effectiveScale = baseScale * state.pdfViewer.scale;
 
+            const viewport = page.getViewport({ scale: effectiveScale });
+            
+            // High DPI support
+            const dpr = window.devicePixelRatio || 1;
+            
             // Setup Canvas
             const canvas = document.getElementById('the-canvas');
             const context = canvas.getContext('2d');
-            canvas.height = scaledViewport.height;
-            canvas.width = scaledViewport.width;
+            
+            canvas.width = Math.floor(viewport.width * dpr);
+            canvas.height = Math.floor(viewport.height * dpr);
+            canvas.style.width = Math.floor(viewport.width) + "px";
+            canvas.style.height = Math.floor(viewport.height) + "px";
+            
+            // Scale context for retina
+            context.scale(dpr, dpr);
 
-            // Setup Highlight Layer (For Drawing)
+            // Setup Layers
+            const layerStyleW = Math.floor(viewport.width) + "px";
+            const layerStyleH = Math.floor(viewport.height) + "px";
+
             const hlLayer = document.getElementById('highlight-layer');
-            hlLayer.style.height = `${scaledViewport.height}px`;
-            hlLayer.style.width = `${scaledViewport.width}px`;
-            hlLayer.innerHTML = ''; // Clear
+            hlLayer.style.width = layerStyleW;
+            hlLayer.style.height = layerStyleH;
+            hlLayer.innerHTML = ''; 
 
-            // Render saved highlights
+            const textLayerDiv = document.getElementById('text-layer');
+            textLayerDiv.style.width = layerStyleW;
+            textLayerDiv.style.height = layerStyleH;
+            textLayerDiv.innerHTML = '';
+
+            // Render saved highlights/comments
             const pdfId = state.pdfViewer.activePdf.id;
             const savedAnns = state.annotations[pdfId] || [];
+            
             savedAnns.filter(a => a.type === 'highlight' && a.page === num).forEach(h => {
                 const rect = document.createElement('div');
                 rect.className = 'drawn-highlight';
@@ -613,82 +754,271 @@
                 hlLayer.appendChild(rect);
             });
 
-            // Setup Text Layer
-            const textLayerDiv = document.getElementById('text-layer');
-            textLayerDiv.style.height = `${scaledViewport.height}px`;
-            textLayerDiv.style.width = `${scaledViewport.width}px`;
-            textLayerDiv.innerHTML = '';
+            savedAnns.filter(a => a.type === 'comment' && a.page === num).forEach(c => {
+                const marker = document.createElement('div');
+                marker.className = 'comment-marker';
+                marker.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>';
+                marker.style.left = `${c.x * 100}%`;
+                marker.style.top = `${c.y * 100}%`;
+                marker.onclick = (e) => { e.stopPropagation(); editComment(c.id); };
+                hlLayer.appendChild(marker);
+            });
 
             // Render Canvas
             const renderContext = {
                 canvasContext: context,
-                viewport: scaledViewport
+                viewport: viewport
             };
             await page.render(renderContext).promise;
 
+            // Render Text Layer
             const textContent = await page.getTextContent();
             pdfjsLib.renderTextLayer({
                 textContentSource: textContent,
                 container: textLayerDiv,
-                viewport: scaledViewport,
+                viewport: viewport,
                 textDivs: []
             });
             
-            // Re-apply mode class
             toggleLayerMode();
         }
 
         function prevPage() { if (state.pdfViewer.pageNum <= 1) return; renderPDFPage(state.pdfViewer.pageNum - 1); }
         function nextPage() { if (state.pdfViewer.pageNum >= state.pdfViewer.numPages) return; renderPDFPage(state.pdfViewer.pageNum + 1); }
         
-        // --- Swipe Logic ---
+        // --- Pinch Zoom & Swipe Drag Logic ---
+        let initialPinchDistance = null;
+        let initialScale = 1;
+        let isZooming = false; 
+        
         let touchStartX = 0;
+        let touchStartY = 0;
         let touchEndX = 0;
-
+        let isSwiping = false; // Flag to differentiate between scrolling down and swiping horizontally
+        
         function handleTouchStart(e) {
-            if(state.pdfViewer.highlightMode) return; // Disable swipe in drawing mode
-            touchStartX = e.changedTouches[0].screenX;
+            if (e.touches.length === 2) {
+                // Pinch Start
+                isZooming = true;
+                initialPinchDistance = getPinchDistance(e);
+                initialScale = state.pdfViewer.scale; 
+            } else if (!state.pdfViewer.highlightMode && !state.pdfViewer.commentMode && !isZooming) {
+                // Only track swipe if not zooming
+                touchStartX = e.touches[0].screenX;
+                touchStartY = e.touches[0].screenY;
+                isSwiping = false; // Reset on new touch
+            }
         }
+
+        function handleTouchMove(e) {
+            if (e.touches.length === 2 && initialPinchDistance) {
+                isZooming = true;
+                e.preventDefault(); // Stop native gestures during pinch
+                
+                const currentDistance = getPinchDistance(e);
+                const scaleFactor = currentDistance / initialPinchDistance;
+                const wrapper = document.querySelector('.pdf-page-wrapper');
+                if(wrapper) {
+                    wrapper.style.transform = `scale(${scaleFactor})`;
+                }
+            } else if (e.touches.length === 1 && !isZooming && state.pdfViewer.scale <= 1.05 && !state.pdfViewer.highlightMode && !state.pdfViewer.commentMode) {
+                // Handle visual drag for swipe-to-change-page if NOT zoomed in
+                const deltaX = e.touches[0].screenX - touchStartX;
+                const deltaY = e.touches[0].screenY - touchStartY;
+                
+                // Determine if user intends to swipe horizontally vs scroll vertically
+                if (!isSwiping && Math.abs(deltaX) > 10 && Math.abs(deltaX) > Math.abs(deltaY)) {
+                    isSwiping = true;
+                }
+                
+                if (isSwiping) {
+                    e.preventDefault(); // Stop vertical scroll while swiping page
+                    const wrapper = document.getElementById('pdf-wrapper');
+                    if (wrapper) {
+                        wrapper.style.transition = 'none';
+                        wrapper.style.transform = `translateX(${deltaX}px)`;
+                    }
+                }
+            }
+        }
+
         function handleTouchEnd(e) {
-            if(state.pdfViewer.highlightMode) return;
-            touchEndX = e.changedTouches[0].screenX;
-            handleSwipe();
+            if (e.touches.length < 2 && isZooming) {
+                initialPinchDistance = null;
+                const wrapper = document.querySelector('.pdf-page-wrapper');
+                if(wrapper) {
+                    wrapper.style.transition = "transform 0.2s";
+                    wrapper.style.transform = "translateX(0px) scale(1)";
+                }
+                setTimeout(() => { isZooming = false; }, 300);
+            }
+            
+            if (!state.pdfViewer.highlightMode && !state.pdfViewer.commentMode && !initialPinchDistance && !isZooming) {
+                touchEndX = e.changedTouches[0].screenX;
+                
+                // If we were swiping the page physically, handle snap back or flip
+                if (state.pdfViewer.scale <= 1.05) {
+                    const deltaX = touchEndX - touchStartX;
+                    const wrapper = document.getElementById('pdf-wrapper');
+                    
+                    if (deltaX < -60) {
+                        nextPage();
+                    } else if (deltaX > 60) {
+                        prevPage();
+                    } else {
+                        // Snap back if didn't swipe far enough
+                        if (wrapper && isSwiping) {
+                            wrapper.style.transition = 'transform 0.3s ease-out';
+                            wrapper.style.transform = 'translateX(0px) scale(1)';
+                        }
+                    }
+                }
+            }
         }
-        function handleSwipe() {
-            if (touchEndX < touchStartX - 50) nextPage();
-            if (touchEndX > touchStartX + 50) prevPage();
+
+        function getPinchDistance(e) {
+            return Math.hypot(
+                e.touches[0].pageX - e.touches[1].pageX,
+                e.touches[0].pageY - e.touches[1].pageY
+            );
         }
 
         function toggleMobileNotes() {
             state.pdfViewer.mobileNotesOpen = !state.pdfViewer.mobileNotesOpen;
             const sidebar = document.getElementById('notes-sidebar');
             sidebar.classList.toggle('translate-x-full'); sidebar.classList.toggle('translate-x-0');
+            
+            const pagination = document.querySelector('.floating-pagination');
+            if (pagination) {
+                if (state.pdfViewer.mobileNotesOpen) {
+                    pagination.classList.add('hide-on-mobile');
+                } else {
+                    pagination.classList.remove('hide-on-mobile');
+                }
+            }
         }
 
-        // --- HIGHLIGHTING FEATURE (BOX DRAWING) ---
+        // --- INTERACTION MODES (Highlight & Comment) ---
         function toggleHighlightMode() {
             state.pdfViewer.highlightMode = !state.pdfViewer.highlightMode;
+            if(state.pdfViewer.highlightMode) state.pdfViewer.commentMode = false;
+            updateToolbarUI();
             toggleLayerMode();
-            
-            // Update button style
-            const btn = document.getElementById('highlight-btn');
-            if(state.pdfViewer.highlightMode) {
-                btn.classList.add('highlight-btn-active');
-                showToast("Draw box to highlight");
-            } else {
-                btn.classList.remove('highlight-btn-active');
+            if(state.pdfViewer.highlightMode) showToast("Draw box to highlight");
+        }
+
+        function toggleCommentMode() {
+            state.pdfViewer.commentMode = !state.pdfViewer.commentMode;
+            if(state.pdfViewer.commentMode) state.pdfViewer.highlightMode = false;
+            updateToolbarUI();
+            toggleLayerMode();
+            if(state.pdfViewer.commentMode) showToast("Tap on PDF to add comment");
+        }
+
+        function updateToolbarUI() {
+            const hBtn = document.getElementById('highlight-btn');
+            const cBtn = document.getElementById('comment-mode-btn');
+            if(hBtn) {
+                if(state.pdfViewer.highlightMode) hBtn.classList.add('tool-btn-active');
+                else hBtn.classList.remove('tool-btn-active');
+            }
+            if(cBtn) {
+                if(state.pdfViewer.commentMode) cBtn.classList.add('comment-btn-active');
+                else cBtn.classList.remove('comment-btn-active');
             }
         }
 
         function toggleLayerMode() {
             const layer = document.getElementById('highlight-layer');
             if(layer) {
+                layer.classList.remove('drawing-mode', 'comment-mode');
                 if(state.pdfViewer.highlightMode) layer.classList.add('drawing-mode');
-                else layer.classList.remove('drawing-mode');
+                if(state.pdfViewer.commentMode) layer.classList.add('comment-mode');
             }
         }
 
-        // Drawing Event Handlers
+        // --- Interaction Handlers ---
+        function handleLayerClick(e) {
+            if(!state.pdfViewer.commentMode) return;
+            
+            const layer = document.getElementById('highlight-layer');
+            const rect = layer.getBoundingClientRect();
+            const relX = (e.clientX - rect.left) / rect.width;
+            const relY = (e.clientY - rect.top) / rect.height;
+            
+            openCommentModal(relX, relY);
+        }
+
+        // --- Comment Modal Logic ---
+        function openCommentModal(x, y, existingId = null) {
+            const modal = document.getElementById('comment-modal');
+            const textarea = document.getElementById('comment-text');
+            const title = document.getElementById('comment-modal-title');
+            
+            state.pdfViewer.editingCommentId = existingId;
+            
+            if(!existingId) {
+                state.pdfViewer.tempLocation = { x, y, page: state.pdfViewer.pageNum };
+                textarea.value = '';
+                title.textContent = "Add a comment";
+            } else {
+                const pdfId = state.pdfViewer.activePdf.id;
+                const ann = state.annotations[pdfId].find(a => a.id === existingId);
+                if(ann) {
+                    textarea.value = ann.text;
+                    title.textContent = "Edit comment";
+                }
+            }
+            
+            modal.classList.remove('hidden');
+            textarea.focus();
+        }
+
+        function closeCommentModal() {
+            document.getElementById('comment-modal').classList.add('hidden');
+            state.pdfViewer.tempLocation = null;
+            state.pdfViewer.editingCommentId = null;
+        }
+
+        function saveComment() {
+            const text = document.getElementById('comment-text').value.trim();
+            if(!text) return;
+
+            const pdfId = state.pdfViewer.activePdf.id;
+            if(!state.annotations[pdfId]) state.annotations[pdfId] = [];
+
+            if(state.pdfViewer.editingCommentId) {
+                const idx = state.annotations[pdfId].findIndex(a => a.id === state.pdfViewer.editingCommentId);
+                if(idx > -1) {
+                    state.annotations[pdfId][idx].text = text;
+                    state.annotations[pdfId][idx].timestamp = new Date().toLocaleString();
+                }
+                showToast("Comment updated");
+            } else {
+                const loc = state.pdfViewer.tempLocation;
+                state.annotations[pdfId].unshift({
+                    id: Date.now(),
+                    type: 'comment',
+                    text: text,
+                    page: loc.page,
+                    x: loc.x,
+                    y: loc.y,
+                    timestamp: new Date().toLocaleString()
+                });
+                showToast("Comment added");
+            }
+
+            saveData();
+            renderNotesList();
+            renderPDFPage(state.pdfViewer.pageNum);
+            closeCommentModal();
+        }
+
+        function editComment(id) {
+            openCommentModal(null, null, id);
+        }
+
+        // --- Drawing Logic ---
         function startDraw(e) {
             if(!state.pdfViewer.highlightMode) return;
             e.preventDefault();
@@ -701,7 +1031,6 @@
             startX = clientX - rect.left;
             startY = clientY - rect.top;
 
-            // Create temp box
             currentRect = document.createElement('div');
             currentRect.className = 'drawn-highlight';
             currentRect.style.left = startX + 'px';
@@ -735,28 +1064,23 @@
             if(!isDrawing || !state.pdfViewer.highlightMode) return;
             isDrawing = false;
             
-            // Save annotation
             const layer = document.getElementById('highlight-layer');
             const layerRect = layer.getBoundingClientRect();
             const boxRect = currentRect.getBoundingClientRect();
             
-            // Calculate relative coordinates (percentages)
             const relX = (boxRect.left - layerRect.left) / layerRect.width;
             const relY = (boxRect.top - layerRect.top) / layerRect.height;
             const relW = boxRect.width / layerRect.width;
             const relH = boxRect.height / layerRect.height;
 
-            if(relW < 0.01 || relH < 0.01) {
-                currentRect.remove(); // Too small
-                return;
-            }
+            if(relW < 0.01 || relH < 0.01) { currentRect.remove(); return; }
 
             const pdfId = state.pdfViewer.activePdf.id;
             if(!state.annotations[pdfId]) state.annotations[pdfId] = [];
             
             state.annotations[pdfId].unshift({
                 id: Date.now(),
-                text: "Visual Highlight",
+                text: "",
                 timestamp: new Date().toLocaleString(),
                 type: 'highlight',
                 page: state.pdfViewer.pageNum,
@@ -782,7 +1106,6 @@
         function deleteNote(noteId) {
             const pdfId = state.pdfViewer.activePdf.id;
             state.annotations[pdfId] = state.annotations[pdfId].filter(n => n.id !== noteId);
-            // Also re-render page to remove visual highlight
             renderPDFPage(state.pdfViewer.pageNum);
             saveData(); renderNotesList();
         }
@@ -791,17 +1114,28 @@
             const container = document.getElementById('notes-list');
             const notes = state.annotations[state.pdfViewer.activePdf.id] || [];
             if(notes.length === 0) {
-                container.innerHTML = '<div class="text-center py-10 text-stone-400 italic text-sm">Draw box to highlight, or add notes.</div>';
+                container.innerHTML = '<div class="text-center py-10 text-stone-400 italic text-sm">Draw box to highlight, click to comment, or add notes.</div>';
             } else {
                 container.innerHTML = notes.map(note => {
                     const isHighlight = note.type === 'highlight';
+                    const isComment = note.type === 'comment';
+                    let typeLabel = '';
+                    let icon = '';
+                    let styleClass = '';
+                    
+                    if(isHighlight) { typeLabel = `Highlight (Page ${note.page})`; icon = 'box-select'; styleClass = 'highlight-note'; }
+                    else if(isComment) { typeLabel = `Comment (Page ${note.page})`; icon = 'message-square'; styleClass = 'comment-note'; }
+                    
+                    const jumpAttr = note.page ? `onclick="jumpToPage(${note.page})"` : '';
+                    const cursorClass = note.page ? 'cursor-pointer hover:border-stone-300' : '';
+
                     return `
-                    <div class="bg-white p-4 rounded-xl border border-stone-200 shadow-sm animate-fade-in-up mb-4 ${isHighlight ? 'highlight-note' : ''}">
-                        ${isHighlight ? '<div class="text-xs font-bold text-amber-600 mb-1 flex items-center gap-1"><i data-lucide="box-select" width="12"></i> Highlight (Page ' + (note.page || 1) + ')</div>' : ''}
-                        <p class="text-stone-800 text-sm whitespace-pre-wrap ${isHighlight ? 'italic' : ''}">${note.text}</p>
+                    <div ${jumpAttr} class="bg-white p-4 rounded-xl border border-stone-200 shadow-sm animate-fade-in-up mb-4 ${styleClass} ${cursorClass}">
+                        ${typeLabel ? `<div class="text-xs font-bold text-stone-600 mb-1 flex items-center gap-1 justify-between"><span><i data-lucide="${icon}" width="12" class="inline"></i> ${typeLabel}</span> ${isComment ? `<button onclick="event.stopPropagation(); editComment(${note.id})" class="text-blue-500 hover:text-blue-700 font-normal">Edit</button>` : ''}</div>` : ''}
+                        ${note.text ? `<p class="text-stone-800 text-sm whitespace-pre-wrap ${isHighlight ? 'italic' : ''}">${note.text}</p>` : ''}
                         <div class="mt-3 pt-3 border-t border-stone-100 flex justify-between items-center">
                             <span class="text-[10px] text-stone-400">${note.timestamp}</span>
-                            <button onclick="deleteNote(${note.id})" class="text-stone-300 hover:text-red-500"><i data-lucide="trash-2" width="12"></i></button>
+                            <button onclick="event.stopPropagation(); deleteNote(${note.id})" class="text-stone-300 hover:text-red-500"><i data-lucide="trash-2" width="12"></i></button>
                         </div>
                     </div>`;
                 }).join('');
@@ -813,31 +1147,48 @@
             const pdf = state.pdfViewer.activePdf;
             container.innerHTML = `
                 <div class="flex h-full w-full bg-stone-900 flex-col md:flex-row relative">
-                    <div class="flex-1 flex flex-col h-full bg-stone-800 min-h-0">
+                    <div class="flex-1 flex flex-col h-full bg-stone-800 min-h-0 relative">
                         <div class="h-14 bg-stone-900 border-b border-stone-800 flex items-center justify-between px-4 text-stone-400 shrink-0 z-10">
-                            <div class="flex items-center gap-3">
+                            <!-- Left: Back & Title -->
+                            <div class="flex items-center gap-3 w-1/3">
                                 <button onclick="closePdf()" class="hover:text-white flex items-center gap-1 text-xs"><i data-lucide="chevron-right" class="rotate-180" width="16"></i> Back</button>
-                                <span class="text-stone-200 font-medium truncate text-xs max-w-[150px]">${pdf.name}</span>
+                                <span class="text-stone-200 font-medium truncate text-xs max-w-[100px] hidden md:block">${pdf.name}</span>
                             </div>
-                            <div class="flex items-center gap-4 text-sm font-medium">
-                                <button onclick="prevPage()" class="hover:text-white"><i data-lucide="chevron-left" width="20"></i></button>
-                                <span><span id="page-num">1</span> / ${state.pdfViewer.numPages}</span>
-                                <button onclick="nextPage()" class="hover:text-white"><i data-lucide="chevron-right" width="20"></i></button>
+                            
+                            <!-- Center: Zoom Controls (New) -->
+                            <div class="flex items-center justify-center gap-4 w-1/3">
+                                <button onclick="zoomOut()" class="p-1 hover:bg-stone-700 rounded text-stone-400 hover:text-white"><i data-lucide="minus" width="16"></i></button>
+                                <button onclick="zoomIn()" class="p-1 hover:bg-stone-700 rounded text-stone-400 hover:text-white"><i data-lucide="plus" width="16"></i></button>
                             </div>
-                            <div class="flex items-center gap-2">
+
+                            <!-- Right: Editing Tools -->
+                            <div class="flex items-center justify-end gap-3 w-1/3">
+                                <button id="comment-mode-btn" onclick="toggleCommentMode()" class="p-2 hover:bg-stone-700 bg-stone-800 text-stone-400 rounded transition-colors" title="Add Comment"><i data-lucide="message-square-plus" width="18"></i></button>
                                 <button id="highlight-btn" onclick="toggleHighlightMode()" class="p-2 hover:bg-stone-700 bg-stone-800 text-stone-400 rounded transition-colors" title="Toggle Draw Highlight"><i data-lucide="highlighter" width="18"></i></button>
                                 <button onclick="toggleMobileNotes()" class="md:hidden p-2 rounded text-stone-400"><i data-lucide="pen-tool" width="18"></i></button>
                             </div>
                         </div>
-                        <div id="pdf-render-container" class="flex-1 w-full bg-stone-700 relative" ontouchstart="handleTouchStart(event)" ontouchend="handleTouchEnd(event)">
+                        <div id="pdf-render-container" 
+                             class="flex-1 w-full bg-stone-700 relative" 
+                             ontouchstart="handleTouchStart(event)" 
+                             ontouchmove="handleTouchMove(event)" 
+                             ontouchend="handleTouchEnd(event)">
+                             
                              <div id="pdf-wrapper" class="pdf-page-wrapper">
                                 <canvas id="the-canvas"></canvas>
                                 <div id="highlight-layer" class="highlight-layer"
+                                     onclick="handleLayerClick(event)"
                                      onmousedown="startDraw(event)" onmousemove="moveDraw(event)" onmouseup="endDraw(event)"
                                      ontouchstart="startDraw(event)" ontouchmove="moveDraw(event)" ontouchend="endDraw(event)">
                                 </div>
                                 <div id="text-layer" class="textLayer"></div>
                              </div>
+                        </div>
+                        <!-- Floating Pagination -->
+                        <div class="floating-pagination ${state.pdfViewer.mobileNotesOpen ? 'hide-on-mobile' : ''}">
+                            <button onclick="prevPage()" class="hover:text-stone-300"><i data-lucide="chevron-left" width="20"></i></button>
+                            <span><span id="page-num">1</span> / <span id="page-count">${state.pdfViewer.numPages || '--'}</span></span>
+                            <button onclick="nextPage()" class="hover:text-stone-300"><i data-lucide="chevron-right" width="20"></i></button>
                         </div>
                     </div>
                     <div id="notes-sidebar" class="bg-white border-l border-stone-200 flex flex-col h-full w-full md:w-[350px] fixed inset-0 z-20 md:static md:z-auto transition-transform duration-300 translate-x-full md:translate-x-0">
@@ -855,9 +1206,8 @@
                     </div>
                 </div>`;
             renderNotesList();
-            // Ensure mode is respected after re-render
-            if(state.pdfViewer.highlightMode) {
-                 document.getElementById('highlight-btn').classList.add('highlight-btn-active');
+            updateToolbarUI();
+            if(state.pdfViewer.highlightMode || state.pdfViewer.commentMode) {
                  toggleLayerMode();
             }
         }
@@ -865,7 +1215,7 @@
         function showToast(msg) {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
-            toast.className = 'bg-stone-900 text-white px-4 py-2 rounded-lg shadow-lg text-sm animate-fade-in-up flex items-center gap-2 mb-2 pointer-events-auto';
+            toast.className = 'bg-stone-900 text-white px-4 py-2 rounded-full shadow-lg text-sm animate-fade-in-up flex items-center gap-2 mb-2 pointer-events-auto';
             toast.innerHTML = `<i data-lucide="check" width="14"></i> ${msg}`;
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
