@@ -32,6 +32,15 @@
             to { opacity: 1; transform: translateY(0); }
         }
         .animate-fade-in-up { animation: fadeInUp 0.3s ease-out forwards; }
+        
+        @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow {
+            animation: spin-slow 3s linear infinite;
+        }
+
         .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
         
         /* PDF Container Styles (Fixed for Desktop Zooming) */
@@ -262,6 +271,23 @@
         
         .add-btn-round { width: 36px; height: 36px; border-radius: 50%; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; color: #9ca3af; transition: all 0.2s; }
         .add-btn-round:hover { color: #2563eb; background: #eff6ff; border-color: #bfdbfe; }
+        
+        /* Prominent Add Button Style */
+        .add-btn-prominent {
+            width: 40px; height: 40px; 
+            border-radius: 50%; 
+            background-color: #111827; /* Stone 900 */
+            color: white;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: all 0.2s;
+            border: none;
+        }
+        .add-btn-prominent:hover {
+            background-color: #000;
+            transform: scale(1.05);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
 
         /* Highlight Note Style */
         .highlight-note { border-left: 3px solid #fbbf24; background: #fffbeb; }
@@ -519,6 +545,43 @@
         async function fetchCrossref(q) { const url = `https://api.crossref.org/works?query=${encode(q)}&filter=type:journal-article&rows=20&mailto=search@daag.app`; const res = await fetch(url); if (!res.ok) throw new Error(res.status); const data = await res.json(); return (data.message.items || []).map(i => { let pdfUrl = null; if (i.link && Array.isArray(i.link)) { const found = i.link.find(l => l['content-type'] === 'application/pdf'); if (found) pdfUrl = found.URL; } return { title: i.title?.[0] || 'Untitled', url: i.URL, source: 'Crossref', date: i.created?.['date-parts']?.[0]?.[0] ? String(i.created['date-parts'][0][0]) : '', journal: i['container-title']?.[0] || '', doi: i.DOI, pdf: pdfUrl, authors: i.author ? i.author.map(a => ({ display_name: (a.given ? a.given + ' ' : '') + a.family })) : [], snippet: '', isOpenAccess: !!pdfUrl }; }); }
         async function fetchInternetArchive(q) { const qStr = `(${encode(q)}) AND mediatype:(texts)`; const url = `https://archive.org/advancedsearch.php?q=${qStr}&fl[]=identifier,title,description,year&rows=15&output=json`; const res = await fetch(url); if (!res.ok) throw new Error(res.status); const data = await res.json(); return (data.response?.docs || []).map(d => ({ title: d.title, url: `https://archive.org/details/${d.identifier}`, source: 'Internet Archive', date: d.year ? String(d.year) : '', snippet: Array.isArray(d.description) ? d.description[0] : (d.description || ''), pdf: `https://archive.org/download/${d.identifier}/${d.identifier}.pdf`, journal: 'Archive.org', authors: [], isOpenAccess: true })); }
         
+        // --- NEW: PDF IMPORT LOGIC ---
+        async function importExternalPDF(url, title) {
+            showToast("Attempting to import PDF...");
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error("Fetch failed");
+                const blob = await response.blob();
+                
+                // Create File object
+                const file = new File([blob], `${title}.pdf`, { type: "application/pdf" });
+                
+                const id = Date.now().toString();
+                const newPdf = {
+                    id: id,
+                    name: title || "Imported Document",
+                    blob: file, 
+                    url: URL.createObjectURL(file),
+                    date: new Date().toLocaleDateString()
+                };
+                
+                // Save
+                state.pdfs.push(newPdf);
+                await savePDFToDB({ id: newPdf.id, name: newPdf.name, blob: newPdf.blob, date: newPdf.date });
+                
+                // Switch tab and open
+                setActiveTab('pdf');
+                openPdf(state.pdfs.length - 1);
+                showToast("PDF Imported successfully!");
+                
+            } catch (error) {
+                console.error("Auto-import failed (likely CORS)", error);
+                // Fallback
+                window.open(url, '_blank');
+                showToast("Opened in new tab. Download and upload manually.");
+            }
+        }
+
         // Easter Eggs
         const easterEggs = { "sthitirupa mukherjee": { name: "Sthitirupa Mukherjee", bio: "Editor of Daag Magazine", img: "https://res.cloudinary.com/dpnpu5vn5/image/upload/v1766758483/Stritirupa_bzf7p7.png", emojis: ['✍️', '📄'] }, "farhan aktar": { name: "Farhan Aktar", bio: "Founder of Daag", img: "https://res.cloudinary.com/dpnpu5vn5/image/upload/v1766761391/farhan_daag_yvu8xn.png", emojis: ['💻', '📽️'] }, "shamekha wazed": { name: "Shamekha Wazed", bio: "Graphic Designer, Illustrator", img: "https://res.cloudinary.com/dpnpu5vn5/image/upload/v1766761390/Shamekha_daag_fhrlvs.png", emojis: ['🎨', '👩🏻‍🎨'] }, "bidisha ghosh": { name: "Bidisha Ghosh", bio: "Event Management", img: "https://res.cloudinary.com/dpnpu5vn5/image/upload/v1766761389/Bidisha_daag_j2g7xm.png", emojis: ['🎤', '📅'] }, "saina azmi": { name: "Saina Azmi", bio: "Classical dancer", img: "https://res.cloudinary.com/dpnpu5vn5/image/upload/v1766761391/Saina_daag_qvfkvp.png", emojis: ['💃🏻', '✈️'] }, "anantez": { name: "Anantez", bio: "Creative Consultant at Daag", img: "https://res.cloudinary.com/dpnpu5vn5/image/upload/v1769701458/aayush_icon_nv0dvp.png", emojis: ['🫶', '✨'] } };
         function triggerEmojiShower(emojiList) { const container = document.getElementById('emojiContainer'); container.classList.add('active'); for(let i=0; i<25; i++) { setTimeout(() => { const el = document.createElement('div'); el.className = 'float-emoji'; el.textContent = emojiList[Math.floor(Math.random() * emojiList.length)]; el.style.left = Math.floor(Math.random() * 95) + 'vw'; const duration = 3 + Math.random() * 2; el.style.animationDuration = `${duration}s`; container.appendChild(el); setTimeout(() => { if(el.parentNode) el.remove(); }, duration * 1000); }, i * 120); } setTimeout(() => { container.classList.remove('active'); }, 6000); }
@@ -564,12 +627,90 @@
             `;
             const resultsContainer = document.getElementById('research-results-container');
             if (state.search.easterEgg) { const ee = state.search.easterEgg; resultsContainer.innerHTML = `<div class="easter-egg-card active"><img src="${ee.img}" alt="" class="ee-img"><div class="ee-name">${ee.name}</div><div class="ee-bio">${ee.bio}</div></div>`; return; }
+            
+            // LOADING ANIMATION (ROTATING GLOBE)
+            if (state.search.loading) {
+                resultsContainer.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-48 md:h-64 text-stone-400">
+                        <i data-lucide="globe" width="48" class="mb-4 opacity-50 animate-spin-slow text-stone-600"></i>
+                        <p class="animate-pulse text-sm font-medium">Fetching original papers...</p>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
             if (!state.search.searched) { resultsContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-48 md:h-64 text-stone-400"><p>Start your research.</p></div>`; lucide.createIcons(); return; }
             const items = state.search.results;
             const visibleItems = state.search.pdfsOnly ? items.filter(i => !!i.pdf || i.isOpenAccess) : items;
             if (visibleItems.length === 0) { resultsContainer.innerHTML = '<div class="text-center py-10 text-stone-500">No results found matching filters.</div>'; return; }
             resultsContainer.appendChild(mkEl('div', 'text-center text-stone-400 text-sm mb-4', `Found ${visibleItems.length} results${state.search.pdfsOnly ? ' (PDFs Only)' : ''}.`));
-            visibleItems.forEach((item, idx) => { const card = mkEl('div', `result-card ${item.isHandoff ? 'handoff' : ''}`); const header = mkEl('div', 'flex justify-between items-start gap-4'); const titleBlock = mkEl('div', 'flex-1'); const titleLink = mkEl('a', 'res-title', item.title); titleLink.href = item.url; titleLink.target = '_blank'; highlightText(titleLink, state.search.query); titleBlock.appendChild(titleLink); const metaLine = [item.source, item.date, item.journal].filter(Boolean).join(' · '); titleBlock.appendChild(mkEl('div', 'res-meta', metaLine)); header.appendChild(titleBlock); if (!item.isHandoff) { const addBtn = mkEl('button', 'add-btn-round', ''); addBtn.innerHTML = '<i data-lucide="plus" width="20"></i>'; addBtn.onclick = () => addToLibrary(idx); header.appendChild(addBtn); } card.appendChild(header); if (item.snippet) { const snippetDiv = mkEl('div', 'res-snippet', item.snippet); highlightText(snippetDiv, state.search.query); card.appendChild(snippetDiv); } const footer = mkEl('div', 'res-footer'); if (item.pdf) { const pdfBtn = mkEl('a', 'badge pdf', 'PDF'); pdfBtn.href = item.pdf; pdfBtn.target = '_blank'; footer.appendChild(pdfBtn); } if (item.doi) { const doiBtn = mkEl('a', 'badge', 'DOI'); doiBtn.href = `https://doi.org/${item.doi}`; doiBtn.target = '_blank'; footer.appendChild(doiBtn); } if (!item.isHandoff) { const citeBtn = mkEl('button', 'copy-btn', 'Cite (MLA)'); citeBtn.onclick = () => { const citation = citeMLA(item); navigator.clipboard.writeText(citation); citeBtn.textContent = 'Copied!'; setTimeout(() => { citeBtn.textContent = 'Cite (MLA)'; }, 2000); }; footer.appendChild(citeBtn); } else { footer.appendChild(mkEl('span', 'badge', 'External Database')); } card.appendChild(footer); resultsContainer.appendChild(card); });
+            visibleItems.forEach((item, idx) => { 
+                const card = mkEl('div', `result-card ${item.isHandoff ? 'handoff' : ''}`); 
+                const header = mkEl('div', 'flex justify-between items-start gap-4'); 
+                const titleBlock = mkEl('div', 'flex-1'); 
+                const titleLink = mkEl('a', 'res-title', item.title); 
+                titleLink.href = item.url; titleLink.target = '_blank'; 
+                highlightText(titleLink, state.search.query); 
+                titleBlock.appendChild(titleLink); 
+                
+                const metaLine = [item.source, item.date, item.journal].filter(Boolean).join(' · '); 
+                titleBlock.appendChild(mkEl('div', 'res-meta', metaLine)); 
+                header.appendChild(titleBlock); 
+                
+                if (!item.isHandoff) { 
+                    // PROMINENT ADD BUTTON
+                    const addBtn = mkEl('button', 'add-btn-prominent', ''); 
+                    addBtn.innerHTML = '<i data-lucide="plus" width="20"></i>'; 
+                    addBtn.onclick = () => addToLibrary(idx); 
+                    header.appendChild(addBtn); 
+                } 
+                card.appendChild(header); 
+                
+                if (item.snippet) { 
+                    const snippetDiv = mkEl('div', 'res-snippet', item.snippet); 
+                    highlightText(snippetDiv, state.search.query); 
+                    card.appendChild(snippetDiv); 
+                } 
+                
+                const footer = mkEl('div', 'res-footer'); 
+                if (item.pdf) { 
+                    // SMART PDF BUTTON
+                    const pdfBtn = mkEl('button', 'badge pdf', 'PDF'); // Changed from <a> to <button> for custom logic
+                    pdfBtn.style.cursor = 'pointer';
+                    pdfBtn.onclick = () => importExternalPDF(item.pdf, item.title);
+                    footer.appendChild(pdfBtn); 
+                } 
+                if (item.doi) { 
+                    const doiBtn = mkEl('a', 'badge', 'DOI'); 
+                    doiBtn.href = `https://doi.org/${item.doi}`; doiBtn.target = '_blank'; 
+                    footer.appendChild(doiBtn); 
+                } 
+                if (!item.isHandoff) { 
+                    const citeBtn = mkEl('button', 'copy-btn', 'Cite (MLA)'); 
+                    citeBtn.onclick = () => { 
+                        const citation = citeMLA(item); 
+                        // FALLBACK COPY FOR SECURE CONTEXT
+                        const textArea = document.createElement("textarea");
+                        textArea.value = citation;
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        try {
+                            document.execCommand('copy');
+                            citeBtn.textContent = 'Copied!'; 
+                            setTimeout(() => { citeBtn.textContent = 'Cite (MLA)'; }, 2000); 
+                        } catch (err) {
+                            console.error('Copy failed', err);
+                        }
+                        document.body.removeChild(textArea);
+                    }; 
+                    footer.appendChild(citeBtn); 
+                } else { 
+                    footer.appendChild(mkEl('span', 'badge', 'External Database')); 
+                } 
+                card.appendChild(footer); 
+                resultsContainer.appendChild(card); 
+            });
             lucide.createIcons();
         }
 
@@ -577,11 +718,118 @@
         function citeMLA(item) { const authors = item.authors?.length ? item.authors.map(a => `${a.last || a.display_name}`).join(', ') : ''; const title = item.title ? `"${item.title}."` : ''; const journal = item.journal ? `${item.journal},` : ''; const year = item.date ? `${item.date},` : ''; const url = item.url || ''; const accessDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); return [authors, title, journal, year, url, `Accessed ${accessDate}.`].filter(Boolean).join(' '); }
         function formatCitationText(paper, style) { const authors = paper.authors.map(a => a.name || a.display_name).join(', '); if (style === 'MLA') return `${authors}. "${paper.title}." ${paper.journal}, ${paper.year}, ${paper.url}.`; if (style === 'Chicago') return `${authors}. "${paper.title}." ${paper.journal} (${paper.year}). ${paper.url}.`; return `${authors} (${paper.year}). ${paper.title}. ${paper.journal}. ${paper.url}`; }
         function setCitationStyle(style) { state.citations.style = style; renderView(); }
-        function copyCitationText(text, id) { navigator.clipboard.writeText(text); state.citations.copiedId = id; renderView(); setTimeout(() => { state.citations.copiedId = null; if(state.activeTab === 'citations') renderView(); }, 2000); }
+        
+        function copyCitationText(id) { 
+            const paper = state.library.find(p => p.id === id);
+            if (!paper) return;
+            const text = formatCitationText(paper, state.citations.style);
+            
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showToast("Citation copied to clipboard");
+            } catch (err) {
+                console.error('Copy failed', err);
+                showToast("Failed to copy");
+            }
+            document.body.removeChild(textArea);
+
+            state.citations.copiedId = id; 
+            renderView(); 
+            setTimeout(() => { 
+                state.citations.copiedId = null; 
+                if(state.activeTab === 'citations') renderView(); 
+            }, 2000); 
+        }
+
         function removeCitation(id) { state.library = state.library.filter(p => p.id !== id); saveData(); renderNav(); renderView(); }
+        
+        async function generateCitationFromID() {
+            const inputEl = document.getElementById('doi-isbn-input');
+            let val = inputEl.value.trim();
+            if (!val) return;
+
+            // Clean prefixes
+            val = val.replace(/^(https?:\/\/)?(dx\.)?doi\.org\//i, '');
+            val = val.replace(/^(urn:)?isbn:/i, '').trim();
+            
+            const isDOI = val.startsWith('10.');
+            const cleanIsbn = val.replace(/[\s-]/g, '').toUpperCase();
+            const isISBN = (cleanIsbn.length === 10 || cleanIsbn.length === 13) && !isDOI;
+
+            if (!isDOI && !isISBN) {
+                showToast("Please enter a valid DOI (starts with 10.) or ISBN.");
+                return;
+            }
+
+            inputEl.disabled = true;
+            const originalText = inputEl.value;
+            inputEl.value = 'Fetching...';
+
+            try {
+                let paperObj = null;
+
+                if (isDOI) {
+                    const res = await fetch(`https://api.crossref.org/works/${encodeURIComponent(val)}`);
+                    if (!res.ok) throw new Error("DOI not found");
+                    const data = await res.json();
+                    const item = data.message;
+                    
+                    paperObj = {
+                        id: item.URL || val,
+                        title: item.title?.[0] || 'Unknown Title',
+                        authors: item.author ? item.author.map(a => ({ display_name: (a.given ? a.given + ' ' : '') + a.family })) : [],
+                        year: item.created?.['date-parts']?.[0]?.[0] ? String(item.created['date-parts'][0][0]) : '',
+                        journal: item['container-title']?.[0] || 'Unknown Publication',
+                        url: item.URL || `https://doi.org/${val}`
+                    };
+                } else if (isISBN) {
+                    const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&format=json&jscmd=data`);
+                    if (!res.ok) throw new Error("ISBN fetch failed");
+                    const data = await res.json();
+                    const bookKey = `ISBN:${cleanIsbn}`;
+                    const item = data[bookKey];
+                    
+                    if (!item) throw new Error("ISBN not found");
+
+                    paperObj = {
+                        id: item.url || val,
+                        title: item.title || 'Unknown Title',
+                        authors: item.authors ? item.authors.map(a => ({ display_name: a.name })) : [],
+                        year: item.publish_date ? item.publish_date.match(/\d{4}/)?.[0] || item.publish_date : '',
+                        journal: item.publishers?.[0]?.name || 'Unknown Publisher',
+                        url: item.url || `https://openlibrary.org/isbn/${cleanIsbn}`
+                    };
+                }
+
+                if (paperObj) {
+                    if (!state.library.find(p => p.id === paperObj.id)) {
+                        state.library.push(paperObj);
+                        saveData();
+                        renderNav();
+                        renderView(); 
+                        showToast("Citation generated and added!");
+                    } else {
+                        showToast("This item is already in your library.");
+                        inputEl.value = originalText;
+                        inputEl.disabled = false;
+                    }
+                }
+            } catch (error) {
+                console.error(error);
+                showToast("Failed to fetch metadata. Check ID.");
+                inputEl.value = originalText;
+                inputEl.disabled = false;
+            }
+        }
+
         function renderCitations(container) { 
             const styles = ['APA', 'MLA', 'Chicago']; 
-            container.innerHTML = `<div class="h-full p-4 md:p-12 overflow-y-auto pb-24 md:pb-12"><div class="max-w-4xl mx-auto"><div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 md:mb-8 gap-4"><div><h2 class="text-2xl md:text-3xl font-bold text-stone-900 mb-1">My Bibliography</h2><p class="text-stone-500">${state.library.length} references saved</p></div><div class="flex items-center gap-1 bg-white p-1 rounded-lg border border-stone-200">${styles.map(s => `<button onclick="setCitationStyle('${s}')" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all ${state.citations.style === s ? 'bg-black text-white' : 'text-stone-500 hover:bg-stone-50'}">${s}</button>`).join('')}</div></div>${state.library.length === 0 ? `<div class="text-center py-20 border-2 border-dashed border-stone-200 rounded-2xl"><i data-lucide="quote" width="48" class="mx-auto text-stone-300 mb-4"></i><p class="text-stone-400">Add papers from Research tab</p></div>` : `<div class="bg-white rounded-2xl shadow-sm border border-stone-200 overflow-hidden">${state.library.map((paper, idx) => { const text = formatCitationText(paper, state.citations.style); const isCopied = state.citations.copiedId === paper.id; return `<div class="p-4 md:p-6 border-b border-stone-100 last:border-0 hover:bg-stone-50/50 group"><div class="flex gap-3"><div class="text-stone-300 font-mono text-sm pt-1 w-6 shrink-0">${idx + 1}.</div><div class="flex-1"><p class="text-stone-800 font-serif text-base mb-3 leading-relaxed">${text}</p><div class="flex flex-wrap items-center gap-2 mb-2"><button onclick="copyCitationText('${text.replace(/'/g, "\\'")}', '${paper.id}')" class="text-xs font-medium px-3 py-1.5 rounded-full border flex items-center gap-2 ${isCopied ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-stone-600 border-stone-200 hover:border-stone-400'}"><i data-lucide="${isCopied ? 'check' : 'copy'}" width="12"></i> ${isCopied ? 'Copied' : 'Copy'}</button>${paper.url ? `<a href="${paper.url}" target="_blank" class="text-xs font-medium text-blue-600 hover:text-blue-800 px-2 py-1 flex items-center gap-1"><i data-lucide="external-link" width="12"></i> View Source</a>` : ''}<button onclick="removeCitation('${paper.id}')" class="text-xs font-medium text-red-400 hover:text-red-600 px-2 py-1">Remove</button></div></div></div></div>`; }).join('')}</div>`}</div></div>`; 
+            // UPDATED PLACEHOLDER AND BUTTON TEXT (WITHOUT ICON)
+            container.innerHTML = `<div class="h-full p-4 md:p-12 overflow-y-auto pb-24 md:pb-12"><div class="max-w-4xl mx-auto"><div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 md:mb-8 gap-4"><div><h2 class="text-2xl md:text-3xl font-bold text-stone-900 mb-1">My Bibliography</h2><p class="text-stone-500">${state.library.length} references saved</p></div><div class="flex items-center gap-1 bg-white p-1 rounded-lg border border-stone-200">${styles.map(s => `<button onclick="setCitationStyle('${s}')" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all ${state.citations.style === s ? 'bg-black text-white' : 'text-stone-500 hover:bg-stone-50'}">${s}</button>`).join('')}</div></div><div class="bg-white p-2 rounded-xl border border-stone-200 shadow-sm mb-6 flex gap-2 items-center"><input id="doi-isbn-input" type="text" placeholder="Generate citation using DOI or ISBN..." class="flex-1 bg-transparent border-none px-3 py-2 text-sm outline-none text-stone-800 placeholder-stone-400" onkeydown="if(event.key === 'Enter') generateCitationFromID()"><button onclick="generateCitationFromID()" class="bg-stone-900 text-white px-4 py-2 rounded-lg text-xs font-medium hover:bg-stone-800 transition-colors whitespace-nowrap">Generate</button></div>${state.library.length === 0 ? `<div class="text-center py-20 border-2 border-dashed border-stone-200 rounded-2xl"><i data-lucide="quote" width="48" class="mx-auto text-stone-300 mb-4"></i><p class="text-stone-400">Add papers from Research tab or enter an ID above</p></div>` : `<div class="bg-white rounded-2xl shadow-sm border border-stone-200 overflow-hidden">${state.library.map((paper, idx) => { const text = formatCitationText(paper, state.citations.style); const isCopied = state.citations.copiedId === paper.id; return `<div class="p-4 md:p-6 border-b border-stone-100 last:border-0 hover:bg-stone-50/50 group"><div class="flex gap-3"><div class="text-stone-300 font-mono text-sm pt-1 w-6 shrink-0">${idx + 1}.</div><div class="flex-1"><p class="text-stone-800 font-serif text-base mb-3 leading-relaxed">${text}</p><div class="flex flex-wrap items-center gap-2 mb-2"><button onclick="copyCitationText('${paper.id}')" class="text-xs font-medium px-3 py-1.5 rounded-full border flex items-center gap-2 ${isCopied ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-stone-600 border-stone-200 hover:border-stone-400'}"><i data-lucide="${isCopied ? 'check' : 'copy'}" width="12"></i> ${isCopied ? 'Copied' : 'Copy'}</button>${paper.url ? `<a href="${paper.url}" target="_blank" class="text-xs font-medium text-blue-600 hover:text-blue-800 px-2 py-1 flex items-center gap-1"><i data-lucide="external-link" width="12"></i> View Source</a>` : ''}<button onclick="removeCitation('${paper.id}')" class="text-xs font-medium text-red-400 hover:text-red-600 px-2 py-1">Remove</button></div></div></div></div>`; }).join('')}</div>`}</div></div>`; 
         }
 
         // --- PDF Manager & Editor ---
@@ -625,7 +873,7 @@
         }
 
         function renderPDFList(container) {
-            container.innerHTML = `<div class="h-full p-4 md:p-12 overflow-y-auto pb-24 md:pb-12"><div class="max-w-4xl mx-auto"><div class="flex justify-between items-center mb-6"><div><h2 class="text-2xl md:text-3xl font-bold text-stone-900">My Library</h2><p class="text-stone-500">Read & Annotate</p></div><button onclick="document.getElementById('pdf-upload').click()" class="bg-black text-white px-4 py-2 rounded-xl font-medium flex items-center gap-2 text-sm shadow-lg"><i data-lucide="plus" width="18"></i> Upload PDF</button><input type="file" id="pdf-upload" accept=".pdf" class="hidden" onchange="handleFileUpload(this)"></div>${state.pdfs.length === 0 ? `<div class="border-2 border-dashed border-stone-200 rounded-2xl flex flex-col items-center justify-center h-48 bg-stone-50 text-center"><i data-lucide="download" width="32" class="text-stone-400 mb-2"></i><p class="text-stone-600 font-medium">No PDFs uploaded</p></div>` : `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">${state.pdfs.map((pdf, idx) => `<div class="bg-white rounded-xl border border-stone-200 p-4 hover:shadow-lg flex flex-col h-40 justify-between relative group"><button onclick="deletePdf(${idx})" class="absolute top-2 right-2 p-2 text-stone-300 hover:text-red-500 z-10"><i data-lucide="trash-2" width="16"></i></button><div onclick="openPdf(${idx})" class="cursor-pointer flex-1 flex flex-col justify-between"><div class="flex items-start gap-3"><div class="w-10 h-14 bg-red-50 border border-red-100 rounded flex items-center justify-center"><i data-lucide="file-text" class="text-red-400" width="20"></i></div><div class="pr-6"><h4 class="font-semibold text-stone-800 line-clamp-2 text-sm">${pdf.name}</h4><p class="text-xs text-stone-400">${pdf.date}</p></div></div><div class="flex items-center gap-2 mt-4 text-xs font-medium text-stone-500"><i data-lucide="pen-tool" width="12"></i> ${state.annotations[pdf.id]?.length || 0} Notes</div></div></div>`).join('')}</div>`}</div></div>`;
+            container.innerHTML = `<div class="h-full p-4 md:p-12 overflow-y-auto pb-24 md:pb-12"><div class="max-w-4xl mx-auto"><div class="flex justify-between items-center mb-6"><div><h2 class="text-2xl md:text-3xl font-bold text-stone-900">My Library</h2><p class="text-stone-500">Read & Annotate</p></div><button onclick="document.getElementById('pdf-upload').click()" class="bg-black text-white px-4 py-2 rounded-xl font-medium flex items-center gap-2 text-sm shadow-lg"><i data-lucide="plus" width="18"></i> Upload PDF</button><input type="file" id="pdf-upload" accept=".pdf" class="hidden" onchange="handleFileUpload(this)"></div>${state.pdfs.length === 0 ? `<div class="border-2 border-dashed border-stone-200 rounded-2xl flex flex-col items-center justify-center h-48 bg-stone-50 text-center"><i data-lucide="download" width="32" class="text-stone-400 mb-2"></i><p class="text-stone-600 font-medium">No PDFs uploaded</p></div>` : `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">${state.pdfs.map((pdf, idx) => `<div class="bg-white rounded-xl border border-stone-200 p-4 hover:shadow-lg flex flex-col h-40 justify-between relative group"><button onclick="deletePdf(${idx})" class="absolute top-2 right-2 p-2 text-stone-300 hover:text-red-500 z-10"><i data-lucide="trash-2" width="16"></i></button><div onclick="openPdf(${idx})" class="cursor-pointer flex-1 flex flex-col justify-between"><div class="flex items-start gap-3"><div class="w-10 h-14 bg-red-50 border border-red-100 rounded flex items-center justify-center"><i data-lucide="file-text" class="text-red-400" width="20"></i></div><div class="pr-6 min-w-0 flex-1"><h4 class="font-semibold text-stone-800 line-clamp-2 text-sm break-words">${pdf.name}</h4><p class="text-xs text-stone-400">${pdf.date}</p></div></div><div class="flex items-center gap-2 mt-4 text-xs font-medium text-stone-500"><i data-lucide="pen-tool" width="12"></i> ${state.annotations[pdf.id]?.length || 0} Notes</div></div></div>`).join('')}</div>`}</div></div>`;
         }
 
         async function openPdf(index) {
@@ -817,6 +1065,7 @@
                 
                 const currentDistance = getPinchDistance(e);
                 const scaleFactor = currentDistance / initialPinchDistance;
+                // Temporarily scale via CSS for performance
                 const wrapper = document.querySelector('.pdf-page-wrapper');
                 if(wrapper) {
                     wrapper.style.transform = `scale(${scaleFactor})`;
